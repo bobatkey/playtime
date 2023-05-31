@@ -1,0 +1,4 @@
+(executable
+ (public_name playtime)
+ (name main)
+ (libraries playtime))
