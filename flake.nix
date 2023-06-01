@@ -41,14 +41,15 @@
       in {
         legacyPackages = scope';
 
-        inherit packages;
+        # inherit packages;
 
         ## If you want to have a "default" package which will be built with just `nix build`, do this instead of `inherit packages;`:
-        # packages = packages // { default = packages.<your default package>; };
+        packages = packages // { default = packages.playtime; };
 
         devShells.default = pkgs.mkShell {
           inputsFrom = builtins.attrValues packages;
           buildInputs = devPackages ++ [
+            pkgs.z3
             # You can add packages from nixpkgs here
           ];
         };
