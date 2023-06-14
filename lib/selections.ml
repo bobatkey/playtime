@@ -8,6 +8,7 @@ module Make (E : Expr.S) : sig
     val expected : real expr t -> real expr
     val everywhere : prop expr t -> prop expr
     val map : ('a -> 'b) -> 'a t -> 'b t
+    val p_true : prop expr t -> real expr
   end
 
   type 'a selectable =
@@ -39,7 +40,7 @@ end = struct
       (real expr * 'a) list
 
     let return x =
-      [const 1, x]
+      [const_i 1, x]
 
     let bind d k =
       List.concat_map (fun (p, a) -> List.map (fun (q, b) -> (mul p q, b)) (k a)) d
@@ -52,6 +53,9 @@ end = struct
 
     let everywhere d =
       conj (List.map (fun (p, t) -> disj (eq0 p) t) d)
+
+    let p_true d =
+      sum (List.map (fun (p, b) -> cond b p (const_i 0)) d)
 
   end
 
@@ -73,7 +77,8 @@ end = struct
                ; continuation : 't -> ('r, 'a) t
                } -> ('r, 'a) t
     | Dist   : ('r, 'a) t Dist.t -> ('r, 'a) t
-    (* | Choice : { desc   : 't Expr.choice_desc *)
+
+  (* | Choice : { desc   : 't Expr.choice_desc *)
     (*            ; choice : 't choice expr *)
     (*            ; switch : 't -> ('r, 'a) t *)
     (*            } -> ('r, 'a) t *)

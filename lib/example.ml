@@ -1,104 +1,159 @@
-module PrisonersDilemma (E : Expr.S) = struct
-  module S = Selections.Make (E)
-  open S
+open Selections.Make (Symbolic)
+open Symbolic
+
+let int_pair (u1, u2) =
+  pair (const_i u1) (const_i u2)
+
+let switch_pair ~kind:(desc1, desc2) (v1, v2) cases =
+  switch desc1 v1 (fun x -> switch desc2 v2 (fun y -> cases (x, y)))
+
+let (let@) x f = x f
+
+module PrisonersDilemma = struct
 
   type move = Cooperate | Defect
   let move = ["Cooperate", Cooperate; "Defect", Defect]
 
-  let mk_pair (u1, u2) =
-    E.pair (E.const u1) (E.const u2)
-
-  let outcome p1 p2 = mk_pair @@ match p1, p2 with
+  let outcome (p1, p2) = int_pair @@ match p1, p2 with
     | Cooperate, Cooperate -> (-2, -2)
     | Cooperate, Defect    -> (-10, 0)
     | Defect,    Cooperate -> (0, -10)
     | Defect,    Defect    -> (-5, -5)
 
-  let game strategy1 strategy2 =
-    let* strategy1 = E.fst @ select (mixed move) strategy1
-    and* strategy2 = E.snd @ select (mixed move) strategy2
+  let prisoners_dilemma strategy1 strategy2 =
+    let* strategy1 = get_fst @ select (mixed move) strategy1
+    and* strategy2 = get_snd @ select (mixed move) strategy2
     in
     let* move1 = sample strategy1
     and* move2 = sample strategy2
     in
-    return (E.switch move move1
-            @@ fun m1 ->
-               E.switch move move2
-               @@ fun m2 ->
-                    outcome m1 m2)
+    return (switch_pair ~kind:(move, move) (move1, move2) outcome)
+
+  let pd_nash_equilbrium () =
+    let open Query in
+    let@ strategy1 = mixed move in
+    let@ strategy2 = mixed move in
+    where (equilibrium (prisoners_dilemma strategy1 strategy2))
+
+  let pd_other_nash_equilbrium () =
+    let open Query in
+    let@ strategy1 = mixed move in
+    let@ strategy2 = mixed move in
+    wheres [
+        equilibrium (prisoners_dilemma strategy1 strategy2);
+        disj
+          (gt (Dist.p_true (Dist.map (eq (choice move Cooperate)) strategy1)) (const_i 0))
+          (gt (Dist.p_true (Dist.map (eq (choice move Cooperate)) strategy2)) (const_i 0))
+      ]
+
 end
 
-module MatchingPennies (E: Expr.S) = struct
-  module S = Selections.Make (E)
-  open S
+module MatchingPennies  = struct
 
-  type move = Heads | Tails
-  let move = ["Heads", Heads; "Tails", Tails]
+  type coin = Heads | Tails
+  let coin = ["Heads", Heads; "Tails", Tails]
 
-  let mk_pair (u1, u2) =
-    E.pair (E.const u1) (E.const u2)
-
-  let outcome p1 p2 = mk_pair @@ match p1, p2 with
+  let outcome (p1, p2) = int_pair @@ match p1, p2 with
     | Heads, Heads | Tails, Tails ->
        (1, -1)
     | Heads, Tails | Tails, Heads ->
        (-1, 1)
 
-  let game strategy1 strategy2 =
-    let* strategy1 = E.fst @ select (mixed move) strategy1
-    and* strategy2 = E.snd @ select (mixed move) strategy2
+  let matching_pennies strategy1 strategy2 =
+    let* strategy1 = get_fst @ select (mixed coin) strategy1
+    and* strategy2 = get_snd @ select (mixed coin) strategy2
     in
     let* move1 = sample strategy1
     and* move2 = sample strategy2
     in
-    return (E.switch move move1
-            @@ fun m1 ->
-               E.switch move move2
-               @@ fun m2 ->
-                    outcome m1 m2)
+    return (switch_pair ~kind:(coin, coin) (move1, move2) outcome)
+
+  let mp_nash_equilibrium () =
+    let open Query in
+    let@ player1_strategy = mixed coin in
+    let@ player2_strategy = mixed coin in
+    where (equilibrium (matching_pennies player1_strategy player2_strategy))
+
 end
 
-let pd_equib =
-  let module G = PrisonersDilemma (Symbolic) in
-  let open Symbolic in
-  let p = v "p" in
-  let q = v "q" in
-  let strategy1 =
-    [p, choice G.move G.Cooperate; sub (const 1) p, choice G.move G.Defect] in
-  let strategy2 =
-    [q, choice G.move G.Cooperate; sub (const 1) q, choice G.move G.Defect]
-  in
-  G.S.equilibrium (G.game strategy1 strategy2)
+module Correlated = struct
 
-let mp_equib () =
-  let module G = MatchingPennies (Symbolic) in
-  let open Symbolic in
-  let pH = v "pH" and pT = v "pT" in
-  let qH = v "qH" and qT = v "qT" in
-  let strategy1 =
-    [pH, choice G.move G.Heads; pT, choice G.move G.Tails] in
-  let strategy2 =
-    [qH, choice G.move G.Heads; qT, choice G.move G.Tails]
-  in
-  Format.printf "(declare-const pH Real)\n";
-  Format.printf "(declare-const pT Real)\n";
-  Format.printf "(assert (and (>= pH 0) (>= pT 0) (= 1 (+ pH pT))))\n";
+  let bool = [ "true", true; "false", false ]
 
-  Format.printf "(declare-const qH Real)\n";
-  Format.printf "(declare-const qT Real)\n";
-  Format.printf "(assert (and (>= qH 0) (>= qT 0) (= 1 (+ qH qT))))\n";
+  type preference = Bach | Stravinsky
+  let preference = [ "Bach", Bach; "Stravinsky", Stravinsky ]
 
-  Format.printf "@[<hov2>(assert@ %a)@]\n"
-    Symbolic.pp_smtlib
-    (G.S.equilibrium (G.game strategy1 strategy2));
-  Format.printf "(check-sat)\n";
-  Format.printf "(get-model)\n"
+  let select_pair p (x, y) =
+    conj
+      (List.concat_map (fun (_, x1) ->
+           List.map (fun (_, x2) ->
+               ge (p (x,y)) (p (choice preference x1, choice preference x2))) preference)
+         preference)
 
-(* For a mixed Nash equilibrium problem:
+  let game player1_strat player2_strat coordinator =
+    (* Players choose their strategies based on what happens in the
+       continutation of the game. *)
+    let* player1_strat = get_fst @ select select_pair player1_strat
+    and* player2_strat = get_snd @ select select_pair player2_strat
+    in
+    (* Coordinator signals *)
+    let* signal = sample coordinator
+    in
+    (* Strategies are resolved to choices using the signal *)
+    let move1 =
+      switch bool signal (function true -> fst player1_strat | false -> snd player1_strat)
+    and move2 =
+      switch bool signal (function true -> fst player2_strat | false -> snd player2_strat)
+    in
+    (* Outcome is computed *)
+    return
+    @@ switch_pair ~kind:(preference, preference) (move1, move2)
+         begin function
+           | (Bach, Bach)             -> int_pair (3, 2)
+           | (Bach, Stravinsky)       -> int_pair (1, 1)
+           | (Stravinsky, Bach)       -> int_pair (0, 0)
+           | (Stravinsky, Stravinsky) -> int_pair (2, 3)
+         end
 
-   - Assume two players
-   -
+  let solver () =
+    let query =
+      let open Query in
+      let@ p1a = pure preference in
+      let@ p1b = pure preference in
+      let@ p2a = pure preference in
+      let@ p2b = pure preference in
+      let@ c   = mixed bool in
+      wheres
+        [
+          not (eq p1a p1b);
+          not (eq p2a p2b);
+          gt (Dist.p_true (Dist.map (eq (choice bool true)) c)) (const_i 0);
+          gt (Dist.p_true (Dist.map (eq (choice bool false)) c)) (const_i 0);
+          equilibrium (game (p1a, p1b) (p2a, p2b) c);
+        ]
+    in
+    solve ~query
+      ~on_satisfied:(fun p1a p1b p2a p2b c -> Some ((p1a, p1b), (p2a, p2b), c))
+      ~on_unsat:None
 
+end
+
+(*
+module GiftGame = struct
+
+  (* https://www.asc.ohio-state.edu/peck.33/Econ601/Econ601L15.pdf *)
+
+  type proposal = Gift | NoGift
+  let proposal = [ "Gift", Gift; "NoGift", NoGift ]
+
+  type response = Accept | Reject
+  let response = [ "Accept", Accept; "Reject", Reject ]
+
+  type kind = Friendly | Enemy
+  let kind = [ "Friendly", Friendly; "Enemy", Enemy ]
+
+  let game nature proposer responder =
+    let* proposer = E.fst
+
+end
  *)
-
-let () = ()

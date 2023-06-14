@@ -30,6 +30,12 @@
         overlay = final: prev:
           {
             # You can add overrides here
+            z3 = prev.z3.overrideAttrs (finalattrs: prevattrs: {
+              # comment out lines that check for the destdir that hasn't been made yet
+              preBuild = ''
+                sed -i '1957,1958s/^/#/' scripts/mk_util.py
+              '';
+            });
           };
         scope' = scope.overrideScope' overlay;
         # Packages from devPackagesQuery

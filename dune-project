@@ -19,7 +19,7 @@
  (name playtime)
  (synopsis "A library for constructing non-cooperative games and analysing them.")
  (description "A library for constructing non-cooperative games and analysing them.")
- (depends ocaml dune)
+ (depends ocaml dune z3)
  (tags
   (topics "to describe" your project)))
 
