@@ -98,7 +98,7 @@ utop # solve
 
 ## Example with Mixed Equilibria
 
-The following definitions describe the [Matching Pennies](FIXME) game. It is similar to Prisoner's Dilemma except that the payoffs are different, and the moves have been renamed:
+The following definitions describe the [Matching Pennies](https://en.wikipedia.org/wiki/Matching_pennies) game. It is similar to Prisoner's Dilemma except that the payoffs are different, and the moves have been renamed:
 
 ```ocaml
 type coin = Heads | Tails
@@ -133,14 +133,14 @@ let mp_nash_equilibrium () =
 This time, there is an equilibrium where both players play heads and tails with probability `1/2`:
 
 ```ocaml
-let mp_nash_equilibrium () =
-  let open Query in
-  let@ player1_strategy = mixed coin in
-  let@ player2_strategy = mixed coin in
-  where (equilibrium (matching_pennies player1_strategy player2_strategy))
+utop # solve ~query:(mp_nash_equilibrium ()) ~on_satisfied:(fun p1 p2 -> Some (p1, p2)) ~on_unsat:None;;
+- : (coin Playtime.Symbolic.concrete_dist *
+     coin Playtime.Symbolic.concrete_dist)
+    option
+= Some ([(1/2, Heads); (1/2, Tails)], [(1/2, Heads); (1/2, Tails)])
 ```
 
-These examples are in the file [lib/example.ml].
+These examples are in the file [lib/example.ml](lib/example.ml).
 
 ## Correlated and Bayesian Equilibria
 
@@ -169,7 +169,7 @@ type ('r, 'a) t =
 2. The `Select` constructor works for any “selectable” type (one that has a function of the form `('t -> real expr) -> t -> bool expr`). It accepts a proposed `move`, but the continuation allows for must work for any potential `move`. When evaluating to learn about equilibria, the `utility` function is used to determine which moves are optimal at this point. This constructor is used to implement the `select` function used in the definitions of games above.
 3. The `Dist` constructor allows the remainder of the game to be selected from a finite probability distribution. This will also affect how each player sees the payoffs from the game.
 
-This monad is defined in [lib/selections.ml].
+This monad is defined in [lib/selections.ml](lib/selections.ml).
 
 ## Related work
 
