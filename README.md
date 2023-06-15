@@ -59,7 +59,7 @@ let pd_nash_equilibrium () =
 
 The query states that we are looking for two mixed strategies, `strategy1` and `strategy2`, that are in equilibrium for the prisoner's dilemma gamme.
 
-Solving this query yields a Nash equilibrium for this game. This uses [Z3](FIXME) to do the actual solving:
+Solving this query yields a Nash equilibrium for this game. This uses [Z3](https://github.com/Z3prover/z3) to do the actual solving:
 
 ```ocaml
 utop # solve
