@@ -64,8 +64,8 @@ Solving this query yields a Nash equilibrium for this game. This uses [Z3](https
 ```ocaml
 utop # solve
          ~query:(pd_nash_equilibrium ())
-		 ~on_satisfied:(fun s1 s2 -> Some (s1, s2))
-		 ~on_unsat:None;;
+         ~on_satisfied:(fun s1 s2 -> Some (s1, s2))
+         ~on_unsat:None;;
 = Some ([(0, Cooperate); (1, Defect)], [(0, Cooperate); (1, Defect)])
 ```
 
@@ -79,11 +79,11 @@ let pd_other_nash_equilbrium () =
   let@ strategy1 = mixed move in
   let@ strategy2 = mixed move in
   wheres [
-	  equilibrium (prisoners_dilemma strategy1 strategy2);
-	  disj
-		(gt (Dist.p_true (Dist.map (eq (choice move Cooperate)) strategy1)) (const_i 0))
-		(gt (Dist.p_true (Dist.map (eq (choice move Cooperate)) strategy2)) (const_i 0))
-	]
+      equilibrium (prisoners_dilemma strategy1 strategy2);
+      disj
+        (gt (Dist.p_true (Dist.map (eq (choice move Cooperate)) strategy1)) (const_i 0))
+        (gt (Dist.p_true (Dist.map (eq (choice move Cooperate)) strategy2)) (const_i 0))
+    ]
 ```
 
 This query has no solutions:
@@ -91,8 +91,8 @@ This query has no solutions:
 ```ocaml
 utop # solve
          ~query:(pd_other_nash_equilbrium ())
-		 ~on_satisfied:(fun s1 s2 -> Some (s1, s2))
-		 ~on_unsat:None;;
+         ~on_satisfied:(fun s1 s2 -> Some (s1, s2))
+         ~on_unsat:None;;
 = None
 ```
 
@@ -106,9 +106,9 @@ let coin = ["Heads", Heads; "Tails", Tails]
 
 let outcome (p1, p2) = int_pair @@ match p1, p2 with
   | Heads, Heads | Tails, Tails ->
-	 (1, -1)
+     (1, -1)
   | Heads, Tails | Tails, Heads ->
-	 (-1, 1)
+     (-1, 1)
 
 let game strategy1 strategy2 =
   let* strategy1 = get_fst @ select (mixed coin) strategy1
@@ -158,10 +158,10 @@ The key data structure is a monad combining operations for probabilistic choice 
 type ('r, 'a) t =
   | Return : 'a -> ('r, 'a) t
   | Select : { selectable   : 't selectable
-			 ; utility      : 'r -> real expr
-			 ; move         : 't
-			 ; continuation : 't -> ('r, 'a) t
-			 } -> ('r, 'a) t
+             ; utility      : 'r -> real expr
+             ; move         : 't
+             ; continuation : 't -> ('r, 'a) t
+             } -> ('r, 'a) t
   | Dist   : ('r, 'a) t Dist.t -> ('r, 'a) t
 ```
 
