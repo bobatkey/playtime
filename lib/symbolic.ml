@@ -365,6 +365,33 @@ module Query = struct
   let pure desc query = Pure (desc, query)
   let mixed desc query = Mixed (desc, query)
 
+  let (let@) x f = x f
+
+  let rec get_all_models z3 solver k accum =
+    match Z3.Solver.check solver [] with
+    | Z3.Solver.UNSATISFIABLE ->
+       List.rev accum
+    | Z3.Solver.UNKNOWN ->
+       failwith "Symbolic.Solver.get_all_models: UNKNOWN"
+    | Z3.Solver.SATISFIABLE ->
+       (match Z3.Solver.get_model solver with
+        | None ->
+           failwith "internal error: no model available"
+        | Some model ->
+           let accum = k model :: accum in
+           (* assert "not this model", assuming that the model only
+              contains constant declarations *)
+           let not_model =
+             model
+             |> Z3.Model.get_const_decls
+             |> List.filter_map (fun decl ->
+                    match Z3.Model.get_const_interp model decl with
+                    | None -> None
+                    | Some e -> Some (Z3.Boolean.mk_eq z3 (Z3.FuncDecl.apply decl []) e))
+           in
+           Z3.Solver.add solver [Z3.Boolean.(mk_not z3 (mk_and z3 not_model))];
+           get_all_models z3 solver k accum)
+
   let execute : type k r. query:(k, r) query -> on_satisfied:k -> on_unsat:r -> r =
     fun ~query ~on_satisfied ~on_unsat ->
     let z3 = Z3.mk_context ["model","true"] in
@@ -375,11 +402,12 @@ module Query = struct
       | Where prop_expr ->
          (let z3expr = ToZ3.of_expr z3 prop_expr in
           Z3.Solver.add solver [z3expr];
-          (* print_endline (Z3.Solver.to_string solver); *)
           match Z3.Solver.check solver [] with
-          | Z3.Solver.UNSATISFIABLE
-          | Z3.Solver.UNKNOWN ->
+          | Z3.Solver.UNSATISFIABLE ->
              on_unsat
+          | Z3.Solver.UNKNOWN ->
+             (* FIXME: get the error message from Z3 *)
+             failwith "Symbolic.solver: UNKNOWN"
           | Z3.Solver.SATISFIABLE ->
              (match Z3.Solver.get_model solver with
               | None ->
@@ -437,6 +465,69 @@ module Query = struct
     in
     instantiate query 0 (fun _model -> on_satisfied)
 
+  let execute_all : type k r. query:(k, r) query -> k -> r list =
+    fun ~query k ->
+    let z3 = Z3.mk_context ["model","true"] in
+    let solver = Z3.Solver.mk_simple_solver z3 in
+    let rec instantiate : type k. (k, r) query -> int -> (Z3.Model.model -> k) -> r list =
+      fun query idx k ->
+      match query with
+      | Where prop_expr ->
+         let z3expr = ToZ3.of_expr z3 prop_expr in
+         Z3.Solver.add solver [z3expr];
+         get_all_models z3 solver k []
+      | Pure (desc, query) ->
+         let varnm = Printf.sprintf "p%d" idx in
+         let expr  = Z3.Arithmetic.Integer.mk_const_s z3 varnm in
+         let k model =
+           match Z3.Model.eval model expr true with
+           | None -> failwith "Unable to retrieve value from model"
+           | Some expr ->
+              let i = Z.to_int (Z3.Arithmetic.Integer.get_big_int expr) in
+              let _, v = List.nth desc i in
+              k model v
+         in
+         Z3.Solver.add solver
+           [ Z3.Arithmetic.(mk_le z3 (Integer.mk_numeral_i z3 0) expr);
+             Z3.Arithmetic.(mk_lt z3 expr (Integer.mk_numeral_i z3 (List.length desc)))
+           ];
+         instantiate (query (ChoiceVar varnm)) (idx+1) k
+      | Mixed (desc, query) ->
+         let exprs, dist =
+           desc
+           |> List.map
+                (fun (label, value) ->
+                  let varname = Printf.sprintf "p%d-%s" idx label in
+                  let var     = v varname in
+                  let expr    = Z3.Arithmetic.Real.mk_const_s z3 varname in
+                  (expr, (var, choice desc value)))
+           |> List.split
+         in
+         Z3.Solver.add solver
+           (List.map (Z3.Arithmetic.mk_le z3 (Z3.Arithmetic.Real.mk_numeral_i z3 0)) exprs);
+         Z3.Solver.add solver
+           [ Z3.Boolean.mk_eq z3
+               (Z3.Arithmetic.mk_add z3 exprs)
+               (Z3.Arithmetic.Real.mk_numeral_i z3 1)
+           ];
+         let k model =
+           let dist =
+             List.combine exprs desc
+             |> List.map
+                  (fun (expr, (_, value)) ->
+                    match Z3.Model.eval model expr true with
+                    | None -> failwith "unable to retrieve value from model"
+                    | Some expr ->
+                       let q = Z3.Arithmetic.Real.get_ratio expr in
+                       (q, value))
+           in
+           k model dist
+         in
+         instantiate (query dist) (idx+1) k
+    in
+    instantiate query 0 (fun _model -> k)
+
+
   let two_player query =
     execute ~query
       ~on_satisfied:(fun x y -> Some (x,y))
@@ -445,4 +536,5 @@ module Query = struct
 end
 
 let solve = Query.execute
+let solve_all = Query.execute_all
 let two_player = Query.two_player

@@ -51,10 +51,15 @@ module Query : sig
               ('t choice expr dist -> ('k, 'r) query) ->
               ('t concrete_dist -> 'k, 'r) query
 
+  val ( let@ ) : ('a -> 'b) -> 'a -> 'b
+
 end
 
 
 val solve : query:('k, 'r) Query.query -> on_satisfied:'k -> on_unsat:'r -> 'r
+
+val solve_all : query:('k, 'r) Query.query -> 'k -> 'r list
+
 
 val two_player : ('a -> 'b -> ('a * 'b) option, ('a * 'b) option) Query.query ->
                  ('a * 'b) option
