@@ -7,8 +7,6 @@ let int_pair (u1, u2) =
 let switch_pair ~kind:(desc1, desc2) (v1, v2) cases =
   switch desc1 v1 (fun x -> switch desc2 v2 (fun y -> cases (x, y)))
 
-let (let@) x f = x f
-
 module PrisonersDilemma = struct
 
   type move = Cooperate | Defect
@@ -76,7 +74,36 @@ module MatchingPennies  = struct
 
 end
 
-module Correlated = struct
+module Chicken = struct
+
+  type move = Chicken | Dare
+  let move = ["Chicken", Chicken; "Dare", Dare]
+
+  let outcome (m1, m2) =
+    int_pair
+    @@ match m1, m2 with
+       | Dare,    Dare    -> (0, 0)
+       | Dare,    Chicken -> (7, 2)
+       | Chicken, Dare    -> (2, 7)
+       | Chicken, Chicken -> (6, 6)
+
+  let chicken s1 s2 =
+    let* s1 = get_fst @ select (mixed move) s1 in
+    let* s2 = get_snd @ select (mixed move) s2 in
+    let* m1 = sample s1 in
+    let* m2 = sample s2 in
+    return (switch_pair ~kind:(move, move) (m1, m2) outcome)
+
+  let nash_equilibria () =
+    let open Query in
+    let@ s1 = mixed move in
+    let@ s2 = mixed move in
+    where (equilibrium (chicken s1 s2))
+
+end
+
+
+module BoS = struct
 
   let bool = [ "true", true; "false", false ]
 
