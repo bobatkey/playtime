@@ -1,10 +1,14 @@
 {
   inputs = {
     opam-nix.url = "github:tweag/opam-nix";
+    opam-repository = {
+      url = "github:ocaml/opam-repository";
+      flake = false;
+    };
     flake-utils.url = "github:numtide/flake-utils";
     nixpkgs.follows = "opam-nix/nixpkgs";
   };
-  outputs = { self, flake-utils, opam-nix, nixpkgs }@inputs:
+  outputs = { self, flake-utils, opam-nix, nixpkgs, opam-repository }@inputs:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
@@ -26,7 +30,7 @@
           ## - or force ocamlfind to be a certain version:
           # ocamlfind = "1.9.2";
         };
-        scope = on.buildOpamProject' { } ./. query;
+        scope = on.buildOpamProject' { repos = [opam-repository]; } ./. query;
         overlay = final: prev:
           {
             # You can add overrides here
