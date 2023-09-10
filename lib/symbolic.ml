@@ -36,66 +36,6 @@ let choice_idx v desc =
   in
   get_idx 0 desc
 
-module ToZ3 = struct
-
-  open Z3
-
-  let rec of_expr : type a. context -> a expr -> Expr.expr =
-    fun z3 expr ->
-    match expr with
-    | Conj conjuncts ->
-       Boolean.mk_and z3 (List.map (of_expr z3) conjuncts)
-    | False ->
-       Boolean.mk_false z3
-    | Disj (p, q) ->
-       Boolean.mk_or z3 [of_expr z3 p; of_expr z3 q]
-    | Not p ->
-       Boolean.mk_not z3 (of_expr z3 p)
-    | Cond (c, t, e) ->
-       Boolean.mk_ite z3 (of_expr z3 c) (of_expr z3 t) (of_expr z3 e)
-
-    | RealVar nm ->
-       Arithmetic.Real.mk_const_s z3 nm
-    | Const q ->
-       (* FIXME: use the string interface? *)
-       Arithmetic.Real.mk_numeral_nd z3 (Z.to_int @@ Q.num q) (Z.to_int @@ Q.den q)
-    | Eq0 expr ->
-       Boolean.mk_eq z3 (of_expr z3 expr) (Arithmetic.Real.mk_numeral_i z3 0)
-    | Ge (expr1, expr2) ->
-       Arithmetic.mk_ge z3 (of_expr z3 expr1) (of_expr z3 expr2)
-    | Gt (expr1, expr2) ->
-       Arithmetic.mk_gt z3 (of_expr z3 expr1) (of_expr z3 expr2)
-    | Mul (expr1, expr2) ->
-       Arithmetic.mk_mul z3 [of_expr z3 expr1; of_expr z3 expr2]
-    | Sum exprs ->
-       Arithmetic.mk_add z3 (List.map (of_expr z3) exprs)
-    | Subtract (expr1, expr2) ->
-       Arithmetic.mk_sub z3 [of_expr z3 expr1; of_expr z3 expr2]
-
-    | ChoiceVar nm ->
-       Arithmetic.Integer.mk_const_s z3 nm
-    | Choice (value, desc) ->
-       let idx = choice_idx value desc in
-       Arithmetic.Integer.mk_numeral_i z3 idx
-    | Switch (expr, desc, cases) ->
-       let rec loop idx = function
-         | [] -> assert false
-         | [(_,x)] -> of_expr z3 (cases x)
-         | (_,x)::desc ->
-            Boolean.mk_ite z3
-              (Boolean.mk_eq z3 (of_expr z3 expr) (Arithmetic.Integer.mk_numeral_i z3 idx))
-              (of_expr z3 (cases x))
-              (loop (idx+1) desc)
-       in
-       loop 0 desc
-
-    | Eq (expr1, expr2) ->
-       Boolean.mk_eq z3 (of_expr z3 expr1) (of_expr z3 expr2)
-
-    | Pair (_expr1, _expr2) ->
-       invalid_arg "ToZ3.of_expr: Pair"
-end
-
 (* Printing in SMTlib format *)
 
 let rec pp_smtlib : type a. Format.formatter -> a expr -> unit =
@@ -280,63 +220,6 @@ let rec get_snd : type a b. (a * b) expr -> b expr = function
 
 type 'a dist = (real expr * 'a) list
 
-
-
-type 'a predicate =
-  | End   : prop expr predicate
-  | Mixed : 'a Expr.choice_desc * 'b predicate -> ('a choice expr dist -> 'b) predicate
-  | Pure  : 'a Expr.choice_desc * 'b predicate -> ('a choice expr -> 'b) predicate
-
-module Predicate = struct
-
-  let prop = End
-  let mixed x y = Mixed (x, y)
-  let pure x y = Pure (x, y)
-  let (@->) = (@@)
-
-end
-
-let to_smt fmt pred game =
-  let rec instantiate : type a. int -> a predicate -> a -> unit =
-    fun idx pred game ->
-    match pred with
-    | End ->
-       Format.fprintf fmt "@[<hov2>(assert@ %a)@]@," pp_smtlib game
-    | Mixed (desc, pred) ->
-       let varnames, dist =
-         List.split @@
-         List.map
-           (fun (label, value) ->
-             let varname = Printf.sprintf "p%d-%s" idx label in
-             let var     = v varname in
-             (varname, (var, choice desc value)))
-           desc
-       in
-       List.iter (Format.fprintf fmt "@[<hov2>(declare-const %s Real)@]@,") varnames;
-       Format.fprintf fmt "@[<hov2>(assert @[<hov2>(and %a)@])@]@,"
-         (Format.pp_print_list ~pp_sep:Format.pp_print_space
-            (fun fmt nm -> Format.fprintf fmt "(>= %s 0)" nm))
-         varnames;
-       Format.fprintf fmt "@[<hov2>(assert (= @[<hov2>(+ %a)@] 1))@]@,"
-         (Format.pp_print_list ~pp_sep:Format.pp_print_space
-            Format.pp_print_string)
-         varnames;
-       instantiate (idx+1) pred (game dist)
-    | Pure (desc, pred) ->
-       let varnm = Printf.sprintf "p%d" idx in
-       Format.fprintf fmt "@[<hov2>(declare-const %s Int)@]@," varnm;
-       Format.fprintf fmt "@[<hov2>(assert (and (<= 0 %s) (< %s %d)))@]@,"
-         varnm
-         varnm
-         (List.length desc);
-       instantiate (idx+1) pred (game (ChoiceVar varnm))
-  in
-  Format.pp_open_vbox fmt 0;
-  instantiate 1 pred game;
-  Format.fprintf fmt "(check-sat)@,";
-  Format.fprintf fmt "(get-model)@,";
-  Format.pp_close_box fmt ()
-
 type 'a concrete_dist = (Q.t * 'a) list
 
 let pp_dist pp_choice fmt dist =
@@ -349,6 +232,66 @@ let pp_dist pp_choice fmt dist =
            Q.pp_print q
            pp_choice v))
     dist
+
+module ToZ3 = struct
+
+  open Z3
+
+  let rec of_expr : type a. context -> a expr -> Expr.expr =
+    fun z3 expr ->
+    match expr with
+    | Conj conjuncts ->
+       Boolean.mk_and z3 (List.map (of_expr z3) conjuncts)
+    | False ->
+       Boolean.mk_false z3
+    | Disj (p, q) ->
+       Boolean.mk_or z3 [of_expr z3 p; of_expr z3 q]
+    | Not p ->
+       Boolean.mk_not z3 (of_expr z3 p)
+    | Cond (c, t, e) ->
+       Boolean.mk_ite z3 (of_expr z3 c) (of_expr z3 t) (of_expr z3 e)
+
+    | RealVar nm ->
+       Arithmetic.Real.mk_const_s z3 nm
+    | Const q ->
+       (* FIXME: use the string interface? *)
+       Arithmetic.Real.mk_numeral_nd z3 (Z.to_int @@ Q.num q) (Z.to_int @@ Q.den q)
+    | Eq0 expr ->
+       Boolean.mk_eq z3 (of_expr z3 expr) (Arithmetic.Real.mk_numeral_i z3 0)
+    | Ge (expr1, expr2) ->
+       Arithmetic.mk_ge z3 (of_expr z3 expr1) (of_expr z3 expr2)
+    | Gt (expr1, expr2) ->
+       Arithmetic.mk_gt z3 (of_expr z3 expr1) (of_expr z3 expr2)
+    | Mul (expr1, expr2) ->
+       Arithmetic.mk_mul z3 [of_expr z3 expr1; of_expr z3 expr2]
+    | Sum exprs ->
+       Arithmetic.mk_add z3 (List.map (of_expr z3) exprs)
+    | Subtract (expr1, expr2) ->
+       Arithmetic.mk_sub z3 [of_expr z3 expr1; of_expr z3 expr2]
+
+    | ChoiceVar nm ->
+       Arithmetic.Integer.mk_const_s z3 nm
+    | Choice (value, desc) ->
+       let idx = choice_idx value desc in
+       Arithmetic.Integer.mk_numeral_i z3 idx
+    | Switch (expr, desc, cases) ->
+       let rec loop idx = function
+         | [] -> assert false
+         | [(_,x)] -> of_expr z3 (cases x)
+         | (_,x)::desc ->
+            Boolean.mk_ite z3
+              (Boolean.mk_eq z3 (of_expr z3 expr) (Arithmetic.Integer.mk_numeral_i z3 idx))
+              (of_expr z3 (cases x))
+              (loop (idx+1) desc)
+       in
+       loop 0 desc
+
+    | Eq (expr1, expr2) ->
+       Boolean.mk_eq z3 (of_expr z3 expr1) (of_expr z3 expr2)
+
+    | Pair (_expr1, _expr2) ->
+       invalid_arg "ToZ3.of_expr: Pair"
+end
 
 module Query = struct
 

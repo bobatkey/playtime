@@ -1,8 +1,9 @@
+open Generalities
+
 include Expr.S
 
-val pp_smtlib : Format.formatter -> 'a expr -> unit
 
-(* val v : string -> real expr *)
+val pp_smtlib : 'a expr pretty_printer
 
 val not : prop expr -> prop expr
 
@@ -12,9 +13,8 @@ val eq : 't choice expr -> 't choice expr -> prop expr
 
 val gt : real expr -> real expr -> prop expr
 
+(*
 type _ predicate
-
-type 'a dist = (real expr * 'a) list
 
 module Predicate : sig
 
@@ -29,11 +29,13 @@ module Predicate : sig
 end
 
 val to_smt : Format.formatter -> 'a predicate -> 'a -> unit
+ *)
+
+type 'a dist = (real expr * 'a) list
 
 type 'a concrete_dist = (Q.t * 'a) list
 
-val pp_dist : (Format.formatter -> 'a -> unit) ->
-              Format.formatter -> 'a concrete_dist -> unit
+val pp_dist : 'a pretty_printer -> 'a concrete_dist pretty_printer
 
 module Query : sig
 
